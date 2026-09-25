@@ -26,7 +26,7 @@
     .output { margin-top: 30px; }
     .output-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 9px; }
     .status { color: var(--muted); font-size: .85rem; }
-    textarea { min-height: 330px; resize: vertical; line-height: 1.55; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    textarea { min-height: 330px; resize: vertical; line-height: 1.55; font-family: sans-serif; font-size: 15px; padding: 16px; }
     .downloads { display: flex; gap: 12px; margin-top: 14px; }
     .downloads button { background: #334155; display: none; }
     .downloads button:hover { background: #1e293b; }
@@ -93,8 +93,9 @@
       const hours = Math.floor(totalSeconds / 3600);
       const minutes = Math.floor((totalSeconds % 3600) / 60);
       const remainingSeconds = totalSeconds % 60;
-      if (hours > 0) return [hours, minutes, remainingSeconds].map((value) => String(value).padStart(2, '0')).join(':');
-      return [minutes, remainingSeconds].map((value) => String(value).padStart(2, '0')).join(':');
+      return [hours, minutes, remainingSeconds]
+        .map((value) => String(value).padStart(2, '0'))
+        .join(':');
     }
 
     function transcriptToText(transcript) {
