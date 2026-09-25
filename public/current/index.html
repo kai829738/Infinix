@@ -99,7 +99,10 @@
     }
 
     function transcriptToText(transcript) {
-      return transcript.map((entry) => `[${formatTime(entry.start)}] ${entry.text || ''}`).join('\n');
+      return transcript.map((entry) => {
+        const cleanText = (entry.text || '').replace(/\n/g, ' ').trim();
+        return `[${formatTime(entry.start)}] ${cleanText}`;
+      }).join('\n');
     }
 
     form.addEventListener('submit', async (event) => {
