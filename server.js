@@ -25,11 +25,11 @@ app.post('/get-transcript', async (request, response) => {
     apiKey
   } = request.body || {};
 
-  if (!videoUrl || typeof videoUrl !== 'string') {
+  if (!videoUrl || typeof videoUrl !== 'string' || !videoUrl.trim()) {
     return response.status(400).json({ error: 'A YouTube video URL is required.' });
   }
 
-  if (!apiKey || typeof apiKey !== 'string') {
+  if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
     return response.status(400).json({ error: 'An API key is required.' });
   }
 
@@ -39,6 +39,12 @@ app.post('/get-transcript', async (request, response) => {
     include_timestamp: String(includeTimestamp),
     translate: typeof translate === 'string' ? translate : ''
   });
+
+  // TranscriptAPI requires both parameters for Hindi translation.
+  if (translate === 'hi') {
+    query.set('translate', 'hi');
+    query.set('lang', 'hi');
+  }
 
   try {
     const apiResponse = await fetch(`${transcriptApiUrl}?${query.toString()}`, {
@@ -74,6 +80,7 @@ app.use((error, _request, response, _next) => {
   if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
     return response.status(400).json({ error: 'Request body must contain valid JSON.' });
   }
+
   console.error('Unhandled server error:', error);
   return response.status(500).json({ error: 'Internal server error.' });
 });
