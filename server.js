@@ -64,21 +64,47 @@ app.post('/get-transcript', async (request, response) => {
     if (requestedLanguage === 'hi' && Array.isArray(data.transcript) && data.transcript.length > 0) {
       try {
         const sourceTexts = data.transcript.map((entry) => String(entry.text || ''));
-        const translationResult = await translate(sourceTexts, { to: 'hi' });
-        const translatedTexts = Array.isArray(translationResult)
-          ? translationResult.map((item) => typeof item === 'string' ? item : item.translation)
-          : null;
+        const chunkSize = 30;
+        const translatedTexts = [];
 
-        if (!translatedTexts || translatedTexts.length !== data.transcript.length) {
+        for (let index = 0; index < sourceTexts.length; index += chunkSize) {
+          const chunk = sourceTexts.slice(index, index + chunkSize);
+          const translationResult = await translate(chunk, { to: 'hi' });
+
+          if (!Array.isArray(translationResult)) {
+            throw new Error('Translation service returned an invalid response.');
+          }
+
+          const translatedChunk = translationResult.map((item) => {
+            if (typeof item === 'string') return item;
+            return item.text || item.translation || '';
+          });
+
+          if (translatedChunk.length !== chunk.length) {
+            throw new Error('Translation response did not match the chunk length.');
+          }
+
+          translatedTexts.push(...translatedChunk);
+
+          if (index + chunkSize < sourceTexts.length) {
+            await new Promise((resolve) => setTimeout(resolve, 250));
+          }
+        }
+
+        if (translatedTexts.length !== data.transcript.length) {
           throw new Error('Translation response did not match the transcript length.');
         }
 
         data.transcript = data.transcript.map((entry, index) => ({
           ...entry,
-          text: translatedTexts[index] || entry.text
+          text: translatedTexts[index]
         }));
       } catch (translationError) {
-        console.error('Hindi translation failed; returning the original transcript:', translationError);
+        console.error('Hindi translation failed:', translationError);
+        return response.status(500).json({
+          error: 'Translation failed. Please check server logs.',
+          details: translationError.message
+        });
       }
     }
 
