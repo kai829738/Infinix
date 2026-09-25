@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
+const { translate } = require('google-translate-api-x');
 const path = require('path');
 
 const app = express();
@@ -21,7 +22,7 @@ app.post('/get-transcript', async (request, response) => {
     videoUrl,
     format = 'json',
     includeTimestamp = 'true',
-    translate = '',
+    translate: requestedLanguage = '',
     apiKey
   } = request.body || {};
 
@@ -36,15 +37,8 @@ app.post('/get-transcript', async (request, response) => {
   const query = new URLSearchParams({
     video_url: videoUrl.trim(),
     format: String(format),
-    include_timestamp: String(includeTimestamp),
-    translate: typeof translate === 'string' ? translate : ''
+    include_timestamp: String(includeTimestamp)
   });
-
-  // TranscriptAPI requires both parameters for Hindi translation.
-  if (translate === 'hi') {
-    query.set('translate', 'hi');
-    query.set('lang', 'hi');
-  }
 
   try {
     const apiResponse = await fetch(`${transcriptApiUrl}?${query.toString()}`, {
@@ -65,6 +59,27 @@ app.post('/get-transcript', async (request, response) => {
         error: data.error || 'Transcript API request failed.',
         details: data
       });
+    }
+
+    if (requestedLanguage === 'hi' && Array.isArray(data.transcript) && data.transcript.length > 0) {
+      try {
+        const sourceTexts = data.transcript.map((entry) => String(entry.text || ''));
+        const translationResult = await translate(sourceTexts, { to: 'hi' });
+        const translatedTexts = Array.isArray(translationResult)
+          ? translationResult.map((item) => typeof item === 'string' ? item : item.translation)
+          : null;
+
+        if (!translatedTexts || translatedTexts.length !== data.transcript.length) {
+          throw new Error('Translation response did not match the transcript length.');
+        }
+
+        data.transcript = data.transcript.map((entry, index) => ({
+          ...entry,
+          text: translatedTexts[index] || entry.text
+        }));
+      } catch (translationError) {
+        console.error('Hindi translation failed; returning the original transcript:', translationError);
+      }
     }
 
     return response.json(data);
