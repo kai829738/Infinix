@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Fetch and download YouTube video transcripts.">
+  <title>YouTube Transcript</title>
+  <style>
+    :root { color-scheme: light; --bg: #f4f7fb; --card: #fff; --ink: #172033; --muted: #63708a; --primary: #4f46e5; --primary-dark: #3730a3; --border: #dbe2ef; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: linear-gradient(135deg, #eef2ff, var(--bg)); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .container { width: min(920px, calc(100% - 32px)); margin: 0 auto; padding: 52px 0; }
+    .card { background: var(--card); border: 1px solid rgba(219, 226, 239, .8); border-radius: 20px; box-shadow: 0 18px 55px rgba(44, 62, 100, .12); padding: clamp(24px, 5vw, 46px); }
+    h1 { margin: 0 0 8px; font-size: clamp(1.8rem, 4vw, 2.6rem); letter-spacing: -.04em; }
+    .intro { margin: 0 0 30px; color: var(--muted); }
+    form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+    .field { display: flex; flex-direction: column; gap: 8px; }
+    .field.full { grid-column: 1 / -1; }
+    label { font-weight: 650; font-size: .92rem; }
+    input, select, textarea { width: 100%; border: 1px solid var(--border); border-radius: 10px; background: #fff; color: var(--ink); font: inherit; padding: 12px 13px; outline: none; transition: border-color .2s, box-shadow .2s; }
+    input:focus, select:focus, textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79, 70, 229, .14); }
+    button { border: 0; border-radius: 10px; padding: 13px 18px; color: white; background: var(--primary); cursor: pointer; font: inherit; font-weight: 700; transition: background .2s, transform .2s; }
+    button:hover { background: var(--primary-dark); transform: translateY(-1px); }
+    button:disabled { cursor: wait; opacity: .65; transform: none; }
+    .submit { grid-column: 1 / -1; justify-self: start; min-width: 170px; }
+    .output { margin-top: 30px; }
+    .output-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 9px; }
+    .output-header label { margin: 0; }
+    .status { color: var(--muted); font-size: .85rem; }
+    textarea { min-height: 330px; resize: vertical; line-height: 1.55; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .downloads { display: flex; gap: 12px; margin-top: 14px; }
+    .downloads button { background: #334155; display: none; }
+    .downloads button:hover { background: #1e293b; }
+    .error { color: #b42318; }
+    @media (max-width: 640px) { .container { padding: 24px 0; } form { grid-template-columns: 1fr; } .field.full, .submit { grid-column: auto; } .submit { width: 100%; } .downloads { flex-direction: column; } }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <section class="card">
+      <h1>YouTube Transcript</h1>
+      <p class="intro">Fetch, format, and download an accessible transcript from a YouTube video.</p>
+
+      <form id="transcriptForm">
+        <div class="field full">
+          <label for="apiKey">API Key</label>
+          <input id="apiKey" name="apiKey" type="password" autocomplete="off" required placeholder="Enter your Transcript API key">
+        </div>
+        <div class="field full">
+          <label for="videoUrl">YouTube Video URL</label>
+          <input id="videoUrl" name="videoUrl" type="url" required placeholder="https://www.youtube.com/watch?v=...">
+        </div>
+        <div class="field">
+          <label for="format">Format</label>
+          <select id="format" name="format"><option value="json">JSON</option><option value="text">Text</option></select>
+        </div>
+        <div class="field">
+          <label for="includeTimestamp">Include Timestamp</label>
+          <select id="includeTimestamp" name="includeTimestamp"><option value="true">True</option><option value="false">False</option></select>
+        </div>
+        <div class="field full">
+          <label for="translate">Translate</label>
+          <select id="translate" name="translate">
+            <option value="original">None (Original)</option>
+            <option value="it">Italian</option><option value="nl">Dutch</option><option value="zh-CN">Chinese (Simplified)</option>
+            <option value="ja">Japanese</option><option value="ko">Korean</option><option value="hi">Hindi</option>
+            <option value="ar">Arabic</option><option value="ru">Russian</option><option value="tr">Turkish</option>
+          </select>
+        </div>
+        <button class="submit" id="fetchButton" type="submit">Fetch Transcript</button>
+      </form>
+
+      <div class="output">
+        <div class="output-header"><label for="result">Transcript</label><span class="status" id="status" aria-live="polite"></span></div>
+        <textarea id="result" readonly placeholder="Your formatted transcript will appear here..."></textarea>
+        <div class="downloads" id="downloads">
+          <button id="downloadPdf" type="button">Download PDF</button>
+          <button id="downloadTxt" type="button">Download TXT</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const form = document.getElementById('transcriptForm');
+    const result = document.getElementById('result');
+    const status = document.getElementById('status');
+    const fetchButton = document.getElementById('fetchButton');
+    const downloadPdf = document.getElementById('downloadPdf');
+    const downloadTxt = document.getElementById('downloadTxt');
+    let formattedTranscript = '';
+
+    function formatTime(seconds) {
+      const totalSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const remainingSeconds = totalSeconds % 60;
+      if (hours > 0) return [hours, minutes, remainingSeconds].map((value) => String(value).padStart(2, '0')).join(':');
+      return [minutes, remainingSeconds].map((value) => String(value).padStart(2, '0')).join(':');
+    }
+
+    function transcriptToText(transcript) {
+      return transcript.map((entry) => `[${formatTime(entry.start)}] ${entry.text || ''}`).join('\n');
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      fetchButton.disabled = true;
+      status.className = 'status';
+      status.textContent = 'Fetching transcript...';
+      result.value = '';
+      document.getElementById('downloads').querySelectorAll('button').forEach((button) => { button.style.display = 'none'; });
+
+      const formData = new FormData(form);
+      try {
+        const response = await fetch('/get-transcript', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.fromEntries(formData)) });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'The transcript could not be fetched.');
+        if (!Array.isArray(data.transcript)) throw new Error('The API response did not contain a transcript array.');
+        formattedTranscript = transcriptToText(data.transcript);
+        result.value = formattedTranscript;
+        downloadPdf.style.display = 'inline-block';
+        downloadTxt.style.display = 'inline-block';
+        status.textContent = `${data.transcript.length} entries loaded`;
+      } catch (error) {
+        status.className = 'status error';
+        status.textContent = error.message;
+      } finally { fetchButton.disabled = false; }
+    });
+
+    downloadTxt.addEventListener('click', () => {
+      const url = URL.createObjectURL(new Blob([formattedTranscript], { type: 'text/plain;charset=utf-8' }));
+      const link = document.createElement('a'); link.href = url; link.download = 'youtube-transcript.txt'; link.click(); URL.revokeObjectURL(url);
+    });
+
+    downloadPdf.addEventListener('click', () => {
+      const printWin = window.open('', '_blank');
+      if (!printWin) { status.className = 'status error'; status.textContent = 'Please allow pop-ups to print the transcript.'; return; }
+      printWin.document.write('<!doctype html><html><head><meta charset="utf-8"><title>YouTube Transcript</title><style>body { font-family: sans-serif; white-space: pre-wrap; line-height: 1.6; padding: 20px; color: black; }</style></head><body></body></html>');
+      printWin.document.close();
+      printWin.document.body.textContent = formattedTranscript;
+      printWin.focus();
+      printWin.print();
+    });
+  </script>
+</body>
+</html>
