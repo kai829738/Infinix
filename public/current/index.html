@@ -48,7 +48,7 @@
         </div>
         <div class="field full">
           <label for="videoUrl">YouTube Video URL</label>
-          <input id="videoUrl" name="videoUrl" type="url" required placeholder="https://www.youtube.com/watch?v=...">
+          <input id="videoUrl" name="videoUrl" type="text" required placeholder="https://www.youtube.com/watch?v=...">
         </div>
         <div class="field">
           <label for="format">Format</label>
@@ -61,10 +61,8 @@
         <div class="field full">
           <label for="translate">Translate</label>
           <select id="translate" name="translate">
-            <option value="original">None (Original)</option>
-            <option value="it">Italian</option><option value="nl">Dutch</option><option value="zh-CN">Chinese (Simplified)</option>
-            <option value="ja">Japanese</option><option value="ko">Korean</option><option value="hi">Hindi</option>
-            <option value="ar">Arabic</option><option value="ru">Russian</option><option value="tr">Turkish</option>
+            <option value="">Original</option>
+            <option value="hi">Hindi</option>
           </select>
         </div>
         <button class="submit" id="fetchButton" type="submit">Fetch Transcript</button>
@@ -109,11 +107,16 @@
       status.className = 'status';
       status.textContent = 'Fetching transcript...';
       result.value = '';
-      document.getElementById('downloads').querySelectorAll('button').forEach((button) => { button.style.display = 'none'; });
+      formattedTranscript = '';
+      document.querySelectorAll('#downloads button').forEach((button) => { button.style.display = 'none'; });
 
       const formData = new FormData(form);
       try {
-        const response = await fetch('/get-transcript', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.fromEntries(formData)) });
+        const response = await fetch('/get-transcript', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(Object.fromEntries(formData))
+        });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'The transcript could not be fetched.');
         if (!Array.isArray(data.transcript)) throw new Error('The API response did not contain a transcript array.');
@@ -125,17 +128,29 @@
       } catch (error) {
         status.className = 'status error';
         status.textContent = error.message;
-      } finally { fetchButton.disabled = false; }
+      } finally {
+        fetchButton.disabled = false;
+      }
     });
 
     downloadTxt.addEventListener('click', () => {
-      const url = URL.createObjectURL(new Blob([formattedTranscript], { type: 'text/plain;charset=utf-8' }));
-      const link = document.createElement('a'); link.href = url; link.download = 'youtube-transcript.txt'; link.click(); URL.revokeObjectURL(url);
+      const url = URL.createObjectURL(new Blob([formattedTranscript], { type: 'text/plain' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'youtube-transcript.txt';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
     });
 
     downloadPdf.addEventListener('click', () => {
       const printWin = window.open('', '_blank');
-      if (!printWin) { status.className = 'status error'; status.textContent = 'Please allow pop-ups to print the transcript.'; return; }
+      if (!printWin) {
+        status.className = 'status error';
+        status.textContent = 'Please allow pop-ups to print the transcript.';
+        return;
+      }
       printWin.document.write('<!doctype html><html><head><meta charset="utf-8"><title>YouTube Transcript</title><style>body { font-family: sans-serif; white-space: pre-wrap; line-height: 1.6; padding: 20px; color: black; }</style></head><body></body></html>');
       printWin.document.close();
       printWin.document.body.textContent = formattedTranscript;
