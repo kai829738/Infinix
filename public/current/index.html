@@ -25,7 +25,6 @@
     .submit { grid-column: 1 / -1; justify-self: start; min-width: 170px; }
     .output { margin-top: 30px; }
     .output-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 9px; }
-    .output-header label { margin: 0; }
     .status { color: var(--muted); font-size: .85rem; }
     textarea { min-height: 330px; resize: vertical; line-height: 1.55; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     .downloads { display: flex; gap: 12px; margin-top: 14px; }
@@ -84,6 +83,7 @@
     const result = document.getElementById('result');
     const status = document.getElementById('status');
     const fetchButton = document.getElementById('fetchButton');
+    const translateSelect = document.getElementById('translate');
     const downloadPdf = document.getElementById('downloadPdf');
     const downloadTxt = document.getElementById('downloadTxt');
     let formattedTranscript = '';
@@ -110,12 +110,19 @@
       formattedTranscript = '';
       document.querySelectorAll('#downloads button').forEach((button) => { button.style.display = 'none'; });
 
-      const formData = new FormData(form);
+      const payload = {
+        videoUrl: document.getElementById('videoUrl').value.trim(),
+        format: document.getElementById('format').value,
+        includeTimestamp: document.getElementById('includeTimestamp').value,
+        translate: translateSelect.value,
+        apiKey: document.getElementById('apiKey').value
+      };
+
       try {
         const response = await fetch('/get-transcript', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(Object.fromEntries(formData))
+          body: JSON.stringify(payload)
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'The transcript could not be fetched.');
