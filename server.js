@@ -37,7 +37,8 @@ app.post('/get-transcript', async (request, response) => {
   const query = new URLSearchParams({
     video_url: videoUrl.trim(),
     format: String(format),
-    include_timestamp: String(includeTimestamp)
+    include_timestamp: String(includeTimestamp),
+    translate: 'original'
   });
 
   try {
@@ -55,8 +56,9 @@ app.post('/get-transcript', async (request, response) => {
       : { error: await apiResponse.text() };
 
     if (!apiResponse.ok) {
+      const errorMessage = data.error || data.message || JSON.stringify(data) || 'Transcript API request failed.';
       return response.status(apiResponse.status).json({
-        error: data.error || 'Transcript API request failed.',
+        error: `API Error ${apiResponse.status}: ${errorMessage}`,
         details: data
       });
     }
