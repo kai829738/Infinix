@@ -21,7 +21,7 @@ app.post('/get-transcript', async (request, response) => {
     videoUrl,
     format = 'json',
     includeTimestamp = 'true',
-    translate = 'original',
+    translate = '',
     apiKey
   } = request.body || {};
 
@@ -37,7 +37,7 @@ app.post('/get-transcript', async (request, response) => {
     video_url: videoUrl.trim(),
     format: String(format),
     include_timestamp: String(includeTimestamp),
-    translate: String(translate || 'original')
+    translate: typeof translate === 'string' ? translate : ''
   });
 
   try {
