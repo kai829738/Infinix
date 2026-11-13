@@ -1,19 +1,140 @@
-{
-  "name": "youtube-transcript-api",
-  "version": "1.0.0",
-  "private": true,
-  "description": "A CORS-friendly web proxy and frontend for YouTube transcripts.",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^4.21.2",
-    "google-translate-api-x": "latest",
-    "node-fetch": "^2.7.0"
+// 4. Hardened YouTube Transcript Fetcher for Cloud Hosting (Render)
+async function fetchYoutubeTranscript(videoId, preferredLanguages = ['hi', 'en']) {
+  const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const commonHeaders = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Cookie': process.env.YOUTUBE_COOKIE || 'CONSENT=YES+cb'
+  };
+
+  const watchResponse = await fetch(watchUrl, { headers: commonHeaders });
+  if (!watchResponse.ok) {
+    throw new Error(`Failed to load YouTube watch page (HTTP ${watchResponse.status}).`);
   }
+
+  const html = await watchResponse.text();
+
+  // Helper to extract captionTracks from any player response object
+  const getTracks = (playerData) =>
+    playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks || null;
+
+  let tracks = null;
+  let lastPlayabilityReason = null;
+
+  // Attempt A: Extract directly from watch page ytInitialPlayerResponse (fastest, 1 request)
+  const initialPlayerMatch = html.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\});\s*(?:var\s+meta|<\/script>)/s);
+  if (initialPlayerMatch) {
+    try {
+      const initialData = JSON.parse(initialPlayerMatch[1]);
+      tracks = getTracks(initialData);
+      lastPlayabilityReason = initialData?.playabilityStatus?.reason;
+    } catch (_) {}
+  }
+
+  // Attempt B: Try multiple Innertube clients if watch page didn't expose tracks
+  const apiKeyMatch = html.match(/"INNERTUBE_API_KEY":"([^"]+)"/);
+  if (!tracks && apiKeyMatch) {
+    const innertubeApiKey = apiKeyMatch[1];
+    const clients = [
+      {
+        clientName: 'IOS',
+        clientVersion: '19.29.1',
+        deviceMake: 'Apple',
+        deviceModel: 'iPhone16,2',
+        userAgent: 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)'
+      },
+      {
+        clientName: 'ANDROID',
+        clientVersion: '20.10.38',
+        userAgent: 'com.google.android.youtube/20.10.38 (Linux; U; Android 14)'
+      },
+      {
+        clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER',
+        clientVersion: '2.0',
+        userAgent: commonHeaders['User-Agent'],
+        thirdParty: { embedUrl: 'https://www.youtube.com/' }
+      }
+    ];
+
+    for (const client of clients) {
+      try {
+        const body = {
+          context: {
+            client: {
+              clientName: client.clientName,
+              clientVersion: client.clientVersion,
+              hl: 'en',
+              gl: 'US',
+              ...(client.deviceMake ? { deviceMake: client.deviceMake, deviceModel: client.deviceModel } : {})
+            },
+            ...(client.thirdParty ? { thirdParty: client.thirdParty } : {})
+          },
+          videoId
+        };
+
+        const playerResponse = await fetch(
+          `https://www.youtube.com/youtubei/v1/player?key=${innertubeApiKey}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': client.userAgent,
+              'Cookie': commonHeaders['Cookie']
+            },
+            body: JSON.stringify(body)
+          }
+        );
+
+        if (playerResponse.ok) {
+          const playerData = await playerResponse.json();
+          lastPlayabilityReason = playerData?.playabilityStatus?.reason || lastPlayabilityReason;
+          tracks = getTracks(playerData);
+          if (Array.isArray(tracks) && tracks.length > 0) break;
+        }
+      } catch (_) {}
+    }
+  }
+
+  if (!Array.isArray(tracks) || tracks.length === 0) {
+    if (lastPlayabilityReason && /bot|sign in/i.test(lastPlayabilityReason)) {
+      throw new Error(
+        `YouTube blocked Render's datacenter IP ("${lastPlayabilityReason}"). Add a YOUTUBE_COOKIE environment variable in Render or use a proxy.`
+      );
+    }
+    throw new Error('No captions/transcripts are available for this video.');
+  }
+
+  // Pick preferred language (['hi', 'en']) or fall back to first available track
+  let selectedTrack = null;
+  for (const lang of preferredLanguages) {
+    selectedTrack =
+      tracks.find((t) => t.languageCode === lang) ||
+      tracks.find((t) => t.languageCode && t.languageCode.startsWith(`${lang}-`));
+    if (selectedTrack) break;
+  }
+  if (!selectedTrack) selectedTrack = tracks[0];
+
+  const baseUrl = selectedTrack.baseUrl.replace(/&fmt=[^&]+/g, '');
+  const captionResponse = await fetch(baseUrl, { headers: commonHeaders });
+
+  if (!captionResponse.ok) {
+    throw new Error(`Failed to download caption track (HTTP ${captionResponse.status}).`);
+  }
+
+  const xml = await captionResponse.text();
+  const transcript = parseTranscriptXml(xml);
+
+  if (transcript.length === 0) {
+    throw new Error('Transcript track was found but contained no text segments.');
+  }
+
+  return {
+    videoId,
+    language: selectedTrack.languageCode,
+    languageName:
+      selectedTrack.name?.simpleText ||
+      selectedTrack.name?.runs?.[0]?.text ||
+      selectedTrack.languageCode,
+    transcript
+  };
 }
